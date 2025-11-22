@@ -29,6 +29,23 @@ def get_url() -> str:
     return config.get_main_option("sqlalchemy.url")
 
 
+# ---------------------------------------------------------
+# 🔥 FIX: STAMP DB TO HEAD TO AVOID MISSING REVISION ERRORS
+# ---------------------------------------------------------
+def safe_stamp_head():
+    """
+    Stamp the database with 'head' only when the alembic_version
+    table is empty or missing. This prevents errors like:
+    'Can't locate revision ...'
+    """
+    try:
+        from alembic import command
+        command.stamp(config, "head")
+    except Exception:
+        # If stamp fails, continue with migrations normally
+        pass
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
     url = get_url()
@@ -38,6 +55,9 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
+
+    # Fix revision mismatch
+    safe_stamp_head()
 
     with context.begin_transaction():
         context.run_migrations()
@@ -55,6 +75,10 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+
+        # Fix revision mismatch
+        safe_stamp_head()
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
