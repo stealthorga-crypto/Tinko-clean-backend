@@ -1,4 +1,4 @@
-# Backend Dockerfile for Stealth Recovery
+# Backend Dockerfile for Tinko
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -17,17 +17,13 @@ COPY app/ ./app/
 COPY migrations/ ./migrations/
 COPY alembic.ini .
 
-# Create directory for SQLite database
-RUN mkdir -p /app/data
-
-# Expose port
+# Expose FastAPI port
 EXPOSE 8000
 
-# Environment variables (override in docker-compose.yml or deployment)
-ENV DATABASE_URL=sqlite:////app/data/stealth_recovery.db
-ENV JWT_SECRET=change-me-in-production
-ENV JWT_ALGORITHM=HS256
-ENV JWT_EXPIRY_MINUTES=1440
+# IMPORTANT:
+# Do NOT set DATABASE_URL here.
+# Railway will inject the correct Postgres URL automatically.
+# Removing SQLite override fixed DB mismatch + migration failures.
 
-# Run migrations on startup, then start server
+# Run migrations on startup, then launch the server
 CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000
