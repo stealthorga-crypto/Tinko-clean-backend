@@ -8,7 +8,7 @@ from ..deps import get_db
 from .. import models, schemas
 import os
 
-router = APIRouter(prefix="/v1/recoveries", tags=["recoveries"])
+router = APIRouter(tags=["recoveries"])
 bearer_optional = HTTPBearer(auto_error=False)
 
 BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000")

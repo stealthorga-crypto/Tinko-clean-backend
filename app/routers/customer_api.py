@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from datetime import datetime
 
 
-router = APIRouter(prefix="/v1/customer", tags=["customer-api"])
+router = APIRouter(tags=["customer-api"])
 
 
 class TransactionCreate(BaseModel):

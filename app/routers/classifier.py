@@ -15,7 +15,7 @@ class ClassifyOut(BaseModel):
     data: Dict[str, Any]
 
 
-router = APIRouter(prefix="/v1", tags=["classifier"])
+router = APIRouter(tags=["classifier"])
 
 
 @router.post("/classify", response_model=ClassifyOut)

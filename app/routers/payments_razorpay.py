@@ -20,7 +20,7 @@ from app.services.payments.razorpay_adapter import RazorpayAdapter
 from app.config.flags import flag
 from app.analytics.sink import emit
 
-router = APIRouter(prefix="/v1/payments/razorpay", tags=["Razorpay Payments"])
+router = APIRouter(tags=["Razorpay Payments"])
 
 
 def _rp_auth_header() -> Optional[str]:

@@ -16,7 +16,7 @@ except Exception:
     stripe = None  # type: ignore
 
 
-router = APIRouter(prefix="/v1/payments", tags=["payments"])
+router = APIRouter(tags=["payments"])
 
 
 class CreateIntentIn(BaseModel):

@@ -8,7 +8,7 @@ import os
 
 from .. import models
 
-router = APIRouter(prefix="/_dev", tags=["_dev"])
+router = APIRouter(tags=["_dev"])
 
 @router.post("/bootstrap/recoveries")
 def bootstrap_recoveries():

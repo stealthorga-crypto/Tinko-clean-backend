@@ -22,7 +22,7 @@ except Exception:
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(prefix="/v1/payments/stripe", tags=["Stripe Payments"])
+router = APIRouter(tags=["Stripe Payments"])
 
 
 # Pydantic Schemas

@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-router = APIRouter(prefix="/v1/retry", tags=["retry"])
+router = APIRouter(tags=["retry"])
 
 @router.get("/disabled")
 def retry_disabled():

@@ -16,7 +16,7 @@ from ..deps import get_db
 from .. import models
 
 
-router = APIRouter(prefix="/v1/webhooks", tags=["webhooks"])
+router = APIRouter(tags=["webhooks"])
 
 
 def _extract_txn_ref_from_description(desc: str | None) -> str | None:

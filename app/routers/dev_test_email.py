@@ -4,7 +4,7 @@ from typing import Optional
 
 from app.services.email_service import send_failed_payment_alert
 
-router = APIRouter(prefix="/v1/_dev", tags=["Developer Testing"])
+router = APIRouter(tags=["Developer Testing"])
 
 
 class TestFailedPaymentEmail(BaseModel):

@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from app.supabase_http import send_otp, verify_otp
 
-router = APIRouter(prefix="/v1/auth/email", tags=["Auth"])
+router = APIRouter(tags=["Auth"])
 
 
 class SendOTPRequest(BaseModel):

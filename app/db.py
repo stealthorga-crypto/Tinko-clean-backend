@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from typing import Generator
 
 try:
-    # Ensure .env is loaded regardless of CWD (e.g., when Alembic runs from migrations/)
+    # Ensure .env is loaded regardless of current working directory
     from dotenv import load_dotenv, find_dotenv
     load_dotenv(find_dotenv(usecwd=True), override=False)
 except Exception:

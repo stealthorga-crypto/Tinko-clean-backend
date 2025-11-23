@@ -13,7 +13,7 @@ from app.tasks.retry_tasks import update_retry_policy, schedule_retry
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/v1/retry", tags=["retry"])
+router = APIRouter(tags=["retry"])
 
 
 # Pydantic schemas

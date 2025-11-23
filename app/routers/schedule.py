@@ -10,7 +10,7 @@ except Exception:
     def require_org():  # fallback for local smoke
         return {"org_id": "local-smoke"}
 
-router = APIRouter(prefix="/v1/schedule", tags=["schedule"])
+router = APIRouter(tags=["schedule"])
 
 
 @router.get("/suggested_windows")

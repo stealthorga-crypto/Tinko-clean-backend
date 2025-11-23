@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..deps import get_db
 from .. import models
 
-router = APIRouter(prefix="/v1/recoveries", tags=["recoveries"])
+router = APIRouter(tags=["recoveries"])
 
 
 def _attempt_by_token(db: Session, token: str) -> Optional[models.RecoveryAttempt]:

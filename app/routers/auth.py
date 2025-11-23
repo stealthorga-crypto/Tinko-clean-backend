@@ -1,5 +1,3 @@
-# app/routers/auth.py
-
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
@@ -14,7 +12,8 @@ from app.auth_schemas import (
     OTPResponse,
 )
 
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+# CLEAN ROUTER — no prefix here!
+router = APIRouter()
 
 
 # ---------------------------------------------------------
@@ -26,10 +25,6 @@ async def register_user(
     request: Request, 
     db: Session = Depends(get_db)
 ):
-    """
-    Register a new user with email and password.
-    Sends an OTP to the provided email for verification.
-    """
     service = AuthService(db)
     return await service.register_user(payload, request)
 
@@ -43,10 +38,6 @@ async def login(
     request: Request, 
     db: Session = Depends(get_db)
 ):
-    """
-    Login with email and password.
-    Returns JWT access token upon successful authentication.
-    """
     service = AuthService(db)
     return await service.login_user(payload.email, payload.password, request)
 
@@ -60,10 +51,6 @@ async def send_email_otp(
     request: Request, 
     db: Session = Depends(get_db)
 ):
-    """
-    Send OTP to the specified email address.
-    Used for email verification or passwordless login.
-    """
     service = AuthService(db)
     return await service.send_email_otp(payload.email, request)
 
@@ -77,9 +64,5 @@ async def verify_email_otp(
     request: Request, 
     db: Session = Depends(get_db)
 ):
-    """
-    Verify the OTP sent to the email address.
-    Returns JWT access token upon successful verification.
-    """
     service = AuthService(db)
     return await service.verify_email_otp(payload.email, payload.otp, request)

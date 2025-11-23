@@ -10,7 +10,7 @@ from app.deps import get_current_user, get_db, require_roles
 from app.models import User, Transaction, ReconLog
 from app.services.payments.razorpay_adapter import RazorpayAdapter
 
-router = APIRouter(prefix="/v1/recon", tags=["Reconciliation"])
+router = APIRouter(tags=["Reconciliation"])
 
 
 def _parse_int(v: Optional[str], default: int) -> int:

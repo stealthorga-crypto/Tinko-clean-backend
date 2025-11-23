@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from app.deps import require_roles_or_token
 from app.services.partition_service import ensure_current_month_partitions, prune_old_partitions
 
-router = APIRouter(prefix="/v1/maintenance", tags=["maintenance"])
+router = APIRouter(tags=["maintenance"])
 
 @router.post("/partition/ensure_current")
 def ensure_current_partition(user=Depends(require_roles_or_token(["admin"]))):

@@ -9,7 +9,6 @@ from ..deps import require_roles_or_token
 import app.models  # noqa: F401
 
 router = APIRouter(
-    prefix="/admin/db",
     tags=["admin", "db"],
     dependencies=[Depends(require_roles_or_token(["admin"]))],
 )

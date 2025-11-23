@@ -9,7 +9,7 @@ from app.services.email_service import (
     send_early_access_internal_alert,
 )
 
-router = APIRouter(prefix="/v1/early-access", tags=["Early Access"])
+router = APIRouter(tags=["Early Access"])
 
 
 class EarlyAccessRequest(BaseModel):

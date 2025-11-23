@@ -18,7 +18,7 @@ from app import models
 from app.services.payments.razorpay_adapter import RazorpayAdapter
 from app.analytics.sink import emit
 
-router = APIRouter(prefix="/v1/webhooks", tags=["Razorpay Webhooks"])
+router = APIRouter(tags=["Razorpay Webhooks"])
 
 
 @router.post("/razorpay", include_in_schema=True)

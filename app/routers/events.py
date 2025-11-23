@@ -8,7 +8,7 @@ from .. import models, schemas
 from ..services.classifier import classify_event
 from ..security import decode_jwt
 
-router = APIRouter(prefix="/v1/events", tags=["events"])
+router = APIRouter(tags=["events"])
 
 @router.post("/payment_failed", response_model=schemas.FailureEventOut, status_code=status.HTTP_201_CREATED)
 def payment_failed(

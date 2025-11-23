@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends
 from app.supabase_jwt import get_current_user_email
 
-router = APIRouter(prefix="/v1/profile", tags=["Profile"])
+router = APIRouter(tags=["Profile"])
 
 
 @router.get("/me")

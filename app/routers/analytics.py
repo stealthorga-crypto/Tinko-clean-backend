@@ -11,7 +11,7 @@ from app.db import get_db
 from app.deps import get_current_user
 from app.models import User, Transaction, RecoveryAttempt, FailureEvent
 
-router = APIRouter(prefix="/v1/analytics", tags=["Analytics"])
+router = APIRouter(tags=["Analytics"])
 
 
 def _parse_dt(value: Optional[str]) -> Optional[datetime]:
