@@ -1,236 +1,71 @@
 # app/services/email_service.py
 
 import os
-from typing import Optional
-
+import logging
+from fastapi import HTTPException
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
-# -----------------------------------------------------------------------------
-# ENV VARIABLES
-# -----------------------------------------------------------------------------
+logger = logging.getLogger(__name__)
+
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
 FROM_EMAIL = os.getenv("SENDGRID_FROM_EMAIL")
 FROM_NAME = os.getenv("SENDGRID_FROM_NAME", "Tinko")
 
+if not SENDGRID_API_KEY:
+    logger.error("❌ SENDGRID_API_KEY missing.")
+if not FROM_EMAIL:
+    logger.error("❌ SENDGRID_FROM_EMAIL missing.")
 
-# -----------------------------------------------------------------------------
-# INTERNAL CLIENT CREATOR
-# -----------------------------------------------------------------------------
-def _get_client() -> Optional[SendGridAPIClient]:
-    """Returns a SendGrid client or None if missing API key."""
-    if not SENDGRID_API_KEY:
-        print("[email_service] SENDGRID_API_KEY not set – email disabled.")
-        return None
+
+async def send_email(to_email: str, subject: str, text: str, html: str):
+    """Core SendGrid wrapper"""
+    if not SENDGRID_API_KEY or not FROM_EMAIL:
+        raise HTTPException(500, "Email service not configured")
+
     try:
-        return SendGridAPIClient(SENDGRID_API_KEY)
+        message = Mail(
+            from_email=(FROM_EMAIL, FROM_NAME),
+            to_emails=to_email,
+            subject=subject,
+            plain_text_content=text,
+            html_content=html,
+        )
+
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        res = sg.send(message)
+
+        logger.info(f"📨 Email sent to {to_email}, Status {res.status_code}")
+        return True
+
     except Exception as e:
-        print("[email_service] Failed to init SendGrid client:", e)
-        return None
+        logger.error(f"❌ SendGrid Error: {e}")
+        raise HTTPException(500, f"SendGrid failed: {e}")
 
 
-# -----------------------------------------------------------------------------
-# EARLY ACCESS – CONFIRMATION EMAIL
-# -----------------------------------------------------------------------------
-def send_early_access_confirmation(to_email: str, company: Optional[str] = None) -> None:
-    """Sends confirmation email to user."""
-    client = _get_client()
-    if not client or not FROM_EMAIL:
-        return
+def build_otp_template(otp: str):
+    """Returns plain text + HTML for OTP mail"""
 
-    subject = "You’re on the Tinko Early Access List ✅"
+    text = f"Your Tinko verification code is {otp}. Valid for 5 minutes."
 
-    html_content = f"""
-    <html>
-      <body style="font-family: Arial, sans-serif; background-color:#0b0b10; color:#ffffff; padding:24px;">
-        <div style="max-width:600px;margin:0 auto;">
-          <h1 style="color:#F4511E; margin-bottom:8px;">Tinko</h1>
-          <h2 style="margin-top:0;">The Moment That Matters — Saved.</h2>
-
-          <p>Hi,</p>
-
-          <p>
-            Thank you for signing up for early access to <strong>Tinko</strong> —
-            the payment recovery engine that saves the moment that matters.
-          </p>
-
-          <p>
-            You’re now part of our priority list. You’ll get:
-          </p>
-
-          <ul>
-            <li>Early access to the platform</li>
-            <li>A guided demo session</li>
-            <li>Launch offers & early pricing</li>
-          </ul>
-
-          <hr style="border:none;border-top:1px solid #333;margin:24px 0;" />
-          <p style="font-size:12px;color:#888;">
-            Tinko • A product of Blocks &amp; Loops Technologies Pvt Ltd
-          </p>
-        </div>
-      </body>
-    </html>
+    html = f"""
+    <div style="font-family:Arial; padding:20px;">
+        <h2 style="color:#DE6B06;">Tinko Verification Code</h2>
+        <p>Use this OTP to continue:</p>
+        <h1 style="font-size:38px; letter-spacing:4px;">{otp}</h1>
+        <p>This OTP is valid for <b>5 minutes</b>.</p>
+    </div>
     """
 
-    message = Mail(
-        from_email=(FROM_EMAIL, FROM_NAME),
-        to_emails=to_email,
-        subject=subject,
-        html_content=html_content,
+    return text, html
+
+
+async def send_email_otp(to_email: str, otp: str):
+    """Send OTP email"""
+    text, html = build_otp_template(otp)
+    return await send_email(
+        to_email=to_email,
+        subject="Your Tinko Verification Code",
+        text=text,
+        html=html,
     )
-
-    try:
-        resp = client.send(message)
-        print("[email_service] Early access confirmation sent:", resp.status_code)
-    except Exception as e:
-        print("[email_service] Error sending early access confirmation:", e)
-
-
-# -----------------------------------------------------------------------------
-# EARLY ACCESS – INTERNAL NOTIFICATION
-# -----------------------------------------------------------------------------
-def send_early_access_internal_alert(user_email: str, company: Optional[str] = None) -> None:
-    """Sends internal alert email to you (contact@tinko.in)."""
-    client = _get_client()
-    if not client or not FROM_EMAIL:
-        return
-
-    internal_to = os.getenv("TINKO_INTERNAL_ALERT_EMAIL", "contact@tinko.in")
-    subject = "[Tinko] New Early Access Signup"
-
-    html_content = f"""
-    <html>
-      <body style="font-family: Arial, sans-serif; background-color:#0b0b10; color:#ffffff; padding:24px;">
-        <div style="max-width:600px;margin:0 auto;">
-          <h2>New Early Access Signup</h2>
-          <p><strong>Email:</strong> {user_email}</p>
-          <p><strong>Company:</strong> {company or "Not provided"}</p>
-        </div>
-      </body>
-    </html>
-    """
-
-    message = Mail(
-        from_email=(FROM_EMAIL, FROM_NAME),
-        to_emails=internal_to,
-        subject=subject,
-        html_content=html_content,
-    )
-
-    try:
-        resp = client.send(message)
-        print("[email_service] Internal early access alert sent:", resp.status_code)
-    except Exception as e:
-        print("[email_service] Error sending internal early access alert:", e)
-
-
-# -----------------------------------------------------------------------------
-# FAILED PAYMENT ALERT (MAIN PRODUCT FEATURE)
-# -----------------------------------------------------------------------------
-def send_failed_payment_alert(
-    to_email: str,
-    customer_name: Optional[str],
-    amount: Optional[str],
-    order_id: Optional[str],
-    retry_url: str,
-    merchant_name: str = "Your Store",
-) -> None:
-    """Sends recovery email to customer for failed payment."""
-    client = _get_client()
-    if not client or not FROM_EMAIL:
-        return
-
-    subject = "Complete Your Payment Securely"
-
-    html_content = f"""
-    <html>
-      <body style="font-family: Arial, sans-serif; background-color:#0b0b10; color:#ffffff; padding:24px;">
-        <div style="max-width:600px;margin:0 auto;">
-          <h1 style="color:#F4511E; margin-bottom:8px;">{merchant_name}</h1>
-          <h2 style="margin-top:0;">Your Payment Didn’t Go Through</h2>
-
-          <p>Hi {customer_name or ""},</p>
-
-          <p>
-            Your recent attempt to pay <strong>{amount or ""}</strong>
-            for order <strong>{order_id or ""}</strong> didn’t go through.
-          </p>
-
-          <p>No amount was deducted. You can complete your payment below:</p>
-
-          <a href="{retry_url}"
-             style="display:inline-block;margin-top:20px;padding:14px 22px;
-                    background-color:#F4511E;color:#ffffff;text-decoration:none;
-                    border-radius:6px;font-weight:bold;">
-            Retry Payment
-          </a>
-
-          <hr style="border:none;border-top:1px solid #333;margin:24px 0;">
-          <p style="font-size:12px;color:#888;">
-            Powered by Tinko • Recovering failed payments automatically
-          </p>
-        </div>
-      </body>
-    </html>
-    """
-
-    message = Mail(
-        from_email=(FROM_EMAIL, FROM_NAME),
-        to_emails=to_email,
-        subject=subject,
-        html_content=html_content,
-    )
-
-    try:
-        resp = client.send(message)
-        print("[email_service] Failed payment email sent:", resp.status_code)
-    except Exception as e:
-        print("[email_service] Error sending failed payment email:", e)
-
-
-# -----------------------------------------------------------------------------
-# EMAIL OTP – FOR LOGIN
-# -----------------------------------------------------------------------------
-def send_email_otp(to_email: str, otp: str) -> None:
-    """Sends OTP to user email for login authentication."""
-    client = _get_client()
-    if not client or not FROM_EMAIL:
-        print("[email_service] OTP email skipped (no client).")
-        return
-
-    subject = "Your Tinko Login OTP"
-
-    html_content = f"""
-    <html>
-      <body style="font-family: Arial, sans-serif; padding:24px;">
-        <div style="max-width:600px;margin:0 auto;">
-          <h2>Your Tinko Login OTP</h2>
-
-          <p>Your login code is:</p>
-
-          <h1 style="letter-spacing:4px;">{otp}</h1>
-
-          <p>This OTP is valid for 5 minutes.</p>
-
-          <hr style="margin:24px 0;">
-          <p style="font-size:12px;color:#888;">
-            Tinko • Blocks & Loops Technologies Pvt Ltd
-          </p>
-        </div>
-      </body>
-    </html>
-    """
-
-    message = Mail(
-        from_email=(FROM_EMAIL, FROM_NAME),
-        to_emails=to_email,
-        subject=subject,
-        html_content=html_content,
-    )
-
-    try:
-        resp = client.send(message)
-        print("[email_service] OTP email sent:", resp.status_code)
-    except Exception as e:
-        print("[email_service] Failed to send OTP email:", e)

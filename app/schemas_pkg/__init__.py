@@ -1,55 +1,29 @@
-# Expose all schemas so they can be imported as:
-# from app.schemas_pkg import XXXXXX
+# app/schemas_pkg/__init__.py
 
+# OTP-related schemas
 from .auth import (
-    UserBase,
-    UserCreate,
-    UserCreateWithPassword,
-    UserLogin,
-    GoogleOAuthSignup,
-    UserResponse,
-    ApiKeyResponse,
-    ApiKeyCreate,
-    ApiKeyCreateResponse,
-    OrganizationResponse,
-    TokenResponse,
-    TokenPayload,
+    SendOTPRequest,
+    VerifyOTPRequest,
+    OTPResponse,
 )
 
+# Recovery schemas
 from .recoveries import (
-    CustomerIn,
-    FailureEventIn,
-    FailureEventOut,
     RecoveryLinkRequest,
     RecoveryLinkOut,
-    NextRetryAtPatch,
     RecoveryAttemptOut,
     RecoveryAttemptsResponse,
 )
 
 __all__ = [
-    # auth
-    "UserBase",
-    "UserCreate",
-    "UserCreateWithPassword",
-    "UserLogin",
-    "GoogleOAuthSignup",
-    "UserResponse",
-    "ApiKeyResponse",
-    "ApiKeyCreate",
-    "ApiKeyCreateResponse",
-    "OrganizationResponse",
-    "TokenResponse",
-    "TokenPayload",
+    # OTP
+    "SendOTPRequest",
+    "VerifyOTPRequest",
+    "OTPResponse",
 
-    # recoveries
-    "CustomerIn",
-    "FailureEventIn",
-    "FailureEventOut",
+    # Recoveries
     "RecoveryLinkRequest",
     "RecoveryLinkOut",
-    "NextRetryAtPatch",
     "RecoveryAttemptOut",
     "RecoveryAttemptsResponse",
 ]
-# Schemas package

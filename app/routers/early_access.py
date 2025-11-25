@@ -1,76 +1,47 @@
+# app/routers/early_access.py
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
-import os
-import requests
-from typing import Optional
+from app.services.email_service import send_email
+import logging
 
-from app.services.email_service import (
-    send_early_access_confirmation,
-    send_early_access_internal_alert,
-)
-
-router = APIRouter(tags=["Early Access"])
+router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class EarlyAccessRequest(BaseModel):
     email: EmailStr
-    company: Optional[str] = None
 
 
 @router.post("/signup")
-async def early_access_signup(data: EarlyAccessRequest):
-    """
-    1) Save signup to Supabase
-    2) Send confirmation email to customer
-    3) Send internal alert email to team
-    """
+async def early_access_signup(request: EarlyAccessRequest):
+    email = request.email
 
-    SUPABASE_URL = os.getenv("SUPABASE_URL")
-    SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-
-    if not SUPABASE_URL or not SERVICE_KEY:
-        raise HTTPException(status_code=500, detail="Supabase configuration missing")
-
-    insert_url = f"{SUPABASE_URL}/rest/v1/early_access"
-
-    payload = {
-        "email": data.email,
-        "company": data.company,
-    }
-
-    headers = {
-        "apikey": SERVICE_KEY,
-        "Authorization": f"Bearer {SERVICE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=minimal",
-    }
-
-    # 1️⃣ Save to Supabase
     try:
-        r = requests.post(insert_url, json=payload, headers=headers, timeout=10)
-        if r.status_code >= 400:
-            print("[early_access] Supabase Error:", r.status_code, r.text)
-            raise HTTPException(status_code=500, detail="DB insert failed")
-    except Exception as e:
-        print("[early_access] Supabase Exception:", e)
-        raise HTTPException(status_code=500, detail="Could not save signup")
-
-    # 2️⃣ Confirmation email to customer
-    try:
-        send_early_access_confirmation(
-            to_email=data.email,
-            company=data.company
+        # Send confirmation to user
+        await send_email(
+            to_email=email,
+            subject="You're on the Tinko Early Access List 🎉",
+            text="Welcome to Tinko Early Access!",
+            html=f"""
+                <h2>Welcome to Tinko Early Access 🎉</h2>
+                <p>You’re officially on the early-access waitlist for Tinko.</p>
+                <p>We’ll notify you as soon as beta opens.</p>
+                <br>
+                <p>— Team Tinko</p>
+            """
         )
-    except Exception as e:
-        print("[early_access] Confirmation Email Error:", e)
 
-    # 3️⃣ Internal alert email
-    try:
-        send_early_access_internal_alert(
-            user_email=data.email,
-            company=data.company
+        # Notify admin
+        await send_email(
+            to_email="founder@tinko.in",
+            subject="New Early Access Signup",
+            text=f"New signup: {email}",
+            html=f"<h3>New Signup</h3><p>Email: {email}</p>"
         )
-    except Exception as e:
-        print("[early_access] Internal Alert Email Error:", e)
 
-    return {"message": "Signup received"}
+        return {"message": "Early access signup successful", "email": email}
+
+    except Exception as e:
+        logger.error(f"Early access failed: {e}")
+        raise HTTPException(500, f"Early access signup failed: {e}")
