@@ -1,25 +1,39 @@
-"""
-Customer API endpoints - demonstrating API key authentication
-These are the endpoints Ram would use with his API keys
-"""
-from fastapi import APIRouter, Depends, HTTPException, status
+# app/routers/customer_api.py
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
-
-from ..deps import get_db
-from ..models import User, Transaction, Organization
-from ..api_auth import require_api_key, require_api_key_scopes, get_current_api_key_info
-from pydantic import BaseModel
 from datetime import datetime
 
+from app.deps import get_db, get_current_user
+from app.api_auth import (
+    require_api_key,
+    require_api_key_scopes,
+    get_current_api_key_info
+)
 
-router = APIRouter(tags=["customer-api"])
+from app.models import User, Transaction
+from pydantic import BaseModel
+
+router = APIRouter(tags=["Customer"])
+
+
+# ---------------------------------------------------------
+# Pydantic Schemas
+# ---------------------------------------------------------
+
+class CustomerProfileResponse(BaseModel):
+    email: str
+    full_name: Optional[str]
+    mobile: Optional[str]
+    org_id: Optional[int]
+    onboarding_complete: bool
 
 
 class TransactionCreate(BaseModel):
     transaction_ref: str
     amount: int
-    currency: str = "USD"
+    currency: str = "INR"
     customer_email: Optional[str] = None
     customer_phone: Optional[str] = None
 
@@ -32,7 +46,7 @@ class TransactionResponse(BaseModel):
     customer_email: Optional[str]
     customer_phone: Optional[str]
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -45,186 +59,286 @@ class ApiKeyUsageResponse(BaseModel):
     expires_at: Optional[datetime]
 
 
-@router.get("/profile")
-def get_customer_profile(
+class ProfileUpdateRequest(BaseModel):
+    business_name: str
+    phone: str
+    payment_gateway: str
+    website: Optional[str] = None
+    monthly_volume: Optional[str] = None
+
+
+# ---------------------------------------------------------
+# 1️⃣ OTP USER PROFILE (Dashboard Login)
+# ---------------------------------------------------------
+@router.get("/profile", response_model=CustomerProfileResponse)
+def get_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Dashboard user profile.
+    - If first-time login → auto-create user row → onboarding.html
+    - If org_id missing → onboarding required
+    """
+
+    # Try to find user
+    user = db.query(User).filter(User.email == current_user.email).first()
+
+    # -------------------------------------------------
+    # CASE 1: First login → No user row exists
+    # -------------------------------------------------
+    if not user:
+        user = User(
+            email=current_user.email,
+            full_name=None,
+            mobile_number=None,
+            org_id=None,         # No company yet
+            is_active=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        # onboarding needed
+        raise HTTPException(404, "New user onboarding required")
+
+    # -------------------------------------------------
+    # CASE 2: User exists but not completed onboarding
+    # -------------------------------------------------
+    if not user.org_id:
+        raise HTTPException(404, "New user onboarding required")
+
+    # -------------------------------------------------
+    # CASE 3: Onboarding complete
+    # -------------------------------------------------
+    return CustomerProfileResponse(
+        email=user.email,
+        full_name=user.full_name,
+        mobile=user.mobile_number,
+        org_id=user.org_id,
+        onboarding_complete=True
+    )
+
+
+@router.post("/profile", response_model=CustomerProfileResponse)
+def create_or_update_profile(
+    profile_data: ProfileUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Complete user onboarding by creating/updating organization and profile.
+    """
+    from app.models import Organization
+    import re
+    
+    # Find the user
+    user = db.query(User).filter(User.email == current_user.email).first()
+    
+    if not user:
+        raise HTTPException(404, "User not found")
+    
+    # Create or find organization
+    if not user.org_id:
+        # Generate a slug from business name
+        slug_base = re.sub(r'[^a-z0-9]+', '-', profile_data.business_name.lower()).strip('-')
+        slug = slug_base
+        counter = 1
+        
+        # Ensure slug is unique
+        while db.query(Organization).filter(Organization.slug == slug).first():
+            slug = f"{slug_base}-{counter}"
+            counter += 1
+        
+        # Create new organization
+        org = Organization(
+            name=profile_data.business_name,
+            slug=slug,
+            is_active=True
+        )
+        db.add(org)
+        db.flush()  # Get the org.id without committing
+        
+        user.org_id = org.id
+    
+    # Update user profile
+    user.full_name = profile_data.business_name
+    user.mobile_number = profile_data.phone
+    
+    # You could store additional metadata here if you have a profile table
+    # For now, we're just updating the user table
+    
+    db.commit()
+    db.refresh(user)
+    
+    return CustomerProfileResponse(
+        email=user.email,
+        full_name=user.full_name,
+        mobile=user.mobile_number,
+        org_id=user.org_id,
+        onboarding_complete=True
+    )
+
+
+@router.post("/onboarding", response_model=CustomerProfileResponse)
+def complete_onboarding(
+    profile_data: ProfileUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Complete user onboarding by creating/updating organization and profile.
+    Alternative endpoint to POST /profile with unique path.
+    """
+    from app.models import Organization
+    import re
+    
+    # Find the user
+    user = db.query(User).filter(User.email == current_user.email).first()
+    
+    if not user:
+        raise HTTPException(404, "User not found")
+    
+    # Create or find organization
+    if not user.org_id:
+        # Generate a slug from business name
+        slug_base = re.sub(r'[^a-z0-9]+', '-', profile_data.business_name.lower()).strip('-')
+        slug = slug_base
+        counter = 1
+        
+        # Ensure slug is unique
+        while db.query(Organization).filter(Organization.slug == slug).first():
+            slug = f"{slug_base}-{counter}"
+            counter += 1
+        
+        # Create new organization
+        org = Organization(
+            name=profile_data.business_name,
+            slug=slug,
+            is_active=True
+        )
+        db.add(org)
+        db.flush()  # Get the org.id without committing
+        
+        user.org_id = org.id
+    
+    # Update user profile
+    user.full_name = profile_data.business_name
+    user.mobile_number = profile_data.phone
+    
+    db.commit()
+    db.refresh(user)
+    
+    return CustomerProfileResponse(
+        email=user.email,
+        full_name=user.full_name,
+        mobile=user.mobile_number,
+        org_id=user.org_id,
+        onboarding_complete=True
+    )
+
+
+# ---------------------------------------------------------
+# 2️⃣ MERCHANT PROFILE (API KEY auth)
+# ---------------------------------------------------------
+@router.get("/merchant/profile")
+def get_merchant_profile(
     current_user: User = Depends(require_api_key),
     api_key_info: Optional[dict] = Depends(get_current_api_key_info)
 ):
-    """
-    Get customer profile information
-    Requires: Valid API key (any scope)
-    
-    Example usage for Ram:
-    curl -H "Authorization: Bearer sk_your_api_key_here" \\
-         http://localhost:8010/v1/customer/profile
-    """
     return {
         "user": {
             "id": current_user.id,
             "email": current_user.email,
-            "full_name": current_user.full_name,
             "account_type": current_user.account_type,
-            "is_active": current_user.is_active
         },
         "organization": {
             "id": current_user.organization.id,
             "name": current_user.organization.name,
             "slug": current_user.organization.slug
         },
-        "api_key_info": api_key_info
+        "api_key_info": api_key_info,
     }
 
 
+# ---------------------------------------------------------
+# 3️⃣ CUSTOMER TRANSACTIONS (JWT)
+# ---------------------------------------------------------
 @router.get("/transactions", response_model=List[TransactionResponse])
-def list_transactions(
+def list_customer_transactions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    txns = (
+        db.query(Transaction)
+        .filter(Transaction.customer_email == current_user.email)
+        .order_by(Transaction.created_at.desc())
+        .all()
+    )
+
+    return [
+        TransactionResponse(
+            id=t.id,
+            transaction_ref=t.transaction_ref,
+            amount=t.amount,
+            currency=t.currency,
+            customer_email=t.customer_email,
+            customer_phone=t.customer_phone,
+            created_at=t.created_at,
+        )
+        for t in txns
+    ]
+
+
+# ---------------------------------------------------------
+# 4️⃣ MERCHANT TRANSACTIONS (API KEY)
+# ---------------------------------------------------------
+@router.get("/merchant/transactions", response_model=List[TransactionResponse])
+def list_transactions_merchant(
     limit: int = 50,
     offset: int = 0,
     current_user: User = Depends(require_api_key),
     db: Session = Depends(get_db)
 ):
-    """
-    List customer's transactions
-    Requires: API key with 'read' scope
-    
-    Example usage for Ram:
-    curl -H "X-API-Key: sk_your_api_key_here" \\
-         "http://localhost:8010/v1/customer/transactions?limit=10"
-    """
-    transactions = db.query(Transaction).filter(
-        Transaction.org_id == current_user.org_id
-    ).offset(offset).limit(limit).all()
-    
+    transactions = (
+        db.query(Transaction)
+        .filter(Transaction.org_id == current_user.org_id)
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
     return [TransactionResponse.model_validate(t) for t in transactions]
 
 
-@router.post("/transactions", response_model=TransactionResponse)
+# ---------------------------------------------------------
+# 5️⃣ MERCHANT — Create Transaction
+# ---------------------------------------------------------
+@router.post("/merchant/transactions", response_model=TransactionResponse)
 def create_transaction(
-    transaction_data: TransactionCreate,
+    tx: TransactionCreate,
     current_user: User = Depends(require_api_key_scopes(["write"])),
     db: Session = Depends(get_db)
 ):
-    """
-    Create a new transaction
-    Requires: API key with 'write' scope
-    
-    Example usage for Ram:
-    curl -X POST \\
-         -H "Authorization: Bearer sk_your_api_key_here" \\
-         -H "Content-Type: application/json" \\
-         -d '{"transaction_ref": "TXN-001", "amount": 10000, "currency": "USD"}' \\
-         http://localhost:8010/v1/customer/transactions
-    """
-    # Check if transaction ref already exists in this org
     existing = db.query(Transaction).filter(
-        Transaction.transaction_ref == transaction_data.transaction_ref,
+        Transaction.transaction_ref == tx.transaction_ref,
         Transaction.org_id == current_user.org_id
     ).first()
-    
+
     if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Transaction reference '{transaction_data.transaction_ref}' already exists"
-        )
-    
-    # Create transaction
-    transaction = Transaction(
-        transaction_ref=transaction_data.transaction_ref,
-        amount=transaction_data.amount,
-        currency=transaction_data.currency,
-        customer_email=transaction_data.customer_email,
-        customer_phone=transaction_data.customer_phone,
+        raise HTTPException(400, "Transaction ref already exists")
+
+    record = Transaction(
+        transaction_ref=tx.transaction_ref,
+        amount=tx.amount,
+        currency=tx.currency,
+        customer_email=tx.customer_email,
+        customer_phone=tx.customer_phone,
         org_id=current_user.org_id
     )
-    
-    db.add(transaction)
+
+    db.add(record)
     db.commit()
-    db.refresh(transaction)
-    
-    return TransactionResponse.model_validate(transaction)
+    db.refresh(record)
 
-
-@router.get("/transactions/{transaction_ref}", response_model=TransactionResponse)
-def get_transaction(
-    transaction_ref: str,
-    current_user: User = Depends(require_api_key),
-    db: Session = Depends(get_db)
-):
-    """
-    Get a specific transaction by reference
-    Requires: API key with 'read' scope
-    
-    Example usage for Ram:
-    curl -H "Authorization: Bearer sk_your_api_key_here" \\
-         http://localhost:8010/v1/customer/transactions/TXN-001
-    """
-    transaction = db.query(Transaction).filter(
-        Transaction.transaction_ref == transaction_ref,
-        Transaction.org_id == current_user.org_id
-    ).first()
-    
-    if not transaction:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Transaction '{transaction_ref}' not found"
-        )
-    
-    return TransactionResponse.model_validate(transaction)
-
-
-@router.get("/api-key/usage", response_model=ApiKeyUsageResponse)
-def get_api_key_usage(
-    api_key_info: dict = Depends(get_current_api_key_info)
-):
-    """
-    Get current API key usage statistics
-    Requires: Valid API key
-    
-    Example usage for Ram:
-    curl -H "X-API-Key: sk_your_api_key_here" \\
-         http://localhost:8010/v1/customer/api-key/usage
-    """
-    if not api_key_info:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This endpoint requires API key authentication"
-        )
-    
-    return ApiKeyUsageResponse(**api_key_info)
-
-
-@router.get("/organization/stats")
-def get_organization_stats(
-    current_user: User = Depends(require_api_key),
-    db: Session = Depends(get_db)
-):
-    """
-    Get organization statistics
-    Requires: API key with 'read' scope
-    
-    Example usage for Ram:
-    curl -H "Authorization: Bearer sk_your_api_key_here" \\
-         http://localhost:8010/v1/customer/organization/stats
-    """
-    # Count transactions
-    total_transactions = db.query(Transaction).filter(
-        Transaction.org_id == current_user.org_id
-    ).count()
-    
-    # Count users in organization
-    total_users = db.query(User).filter(
-        User.org_id == current_user.org_id,
-        User.is_active == True
-    ).count()
-    
-    return {
-        "organization": {
-            "name": current_user.organization.name,
-            "slug": current_user.organization.slug,
-            "total_transactions": total_transactions,
-            "total_active_users": total_users
-        },
-        "requested_by": {
-            "user_email": current_user.email,
-            "account_type": current_user.account_type
-        }
-    }
+    return TransactionResponse.model_validate(record)
