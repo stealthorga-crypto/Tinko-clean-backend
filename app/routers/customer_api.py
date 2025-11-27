@@ -25,6 +25,7 @@ router = APIRouter(tags=["Customer"])
 class CustomerProfileResponse(BaseModel):
     email: str
     full_name: Optional[str]
+    business_name: Optional[str]
     mobile: Optional[str]
     org_id: Optional[int]
     onboarding_complete: bool
@@ -83,7 +84,25 @@ class ProfileUpdateRequest(BaseModel):
     billing_email: Optional[str] = None
 
 
-# ... (get_profile remains same) ...
+@router.get("/profile", response_model=CustomerProfileResponse)
+def get_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get the current user's profile and organization status.
+    """
+    if not current_user.org_id:
+        raise HTTPException(status_code=404, detail="Profile not found (Onboarding incomplete)")
+    
+    return CustomerProfileResponse(
+        email=current_user.email,
+        full_name=current_user.full_name,
+        business_name=current_user.full_name,
+        mobile=current_user.mobile_number,
+        org_id=current_user.org_id,
+        onboarding_complete=True
+    )
 
 
 @router.post("/profile", response_model=CustomerProfileResponse)
@@ -167,6 +186,7 @@ def complete_onboarding(
     return CustomerProfileResponse(
         email=user.email,
         full_name=user.full_name,
+        business_name=user.full_name,
         mobile=user.mobile_number,
         org_id=user.org_id,
         onboarding_complete=True

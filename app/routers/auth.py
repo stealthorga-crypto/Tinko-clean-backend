@@ -25,7 +25,20 @@ JWT_EXPIRY_MINUTES = int(os.getenv("JWT_EXPIRY_MINUTES", 1440))  # 24 hrs
 # Send OTP
 # -------------------------------------------
 @router.post("/email/send-otp", response_model=OTPResponse)
-async def send_otp_route(request: SendOTPRequest):
+async def send_otp_route(
+    request: SendOTPRequest,
+    db: Session = Depends(get_db)
+):
+    # Check if user exists
+    user = db.query(User).filter(User.email == request.email).first()
+
+    if request.intent == "signup":
+        if user:
+            raise HTTPException(status_code=409, detail="Account already exists. Please login.")
+    elif request.intent == "login":
+        if not user:
+            raise HTTPException(status_code=404, detail="Account not found. Please sign up.")
+    
     otp = generate_otp()
     save_otp(request.email, otp)
 

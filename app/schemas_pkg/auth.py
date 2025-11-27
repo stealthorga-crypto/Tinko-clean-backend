@@ -2,6 +2,7 @@ from pydantic import BaseModel, EmailStr
 
 class SendOTPRequest(BaseModel):
     email: EmailStr
+    intent: str = "login"  # "login" or "signup"
 
 class VerifyOTPRequest(BaseModel):
     email: EmailStr
