@@ -51,45 +51,119 @@ class SMSService:
             except Exception as e:
                 logger.error(f"Failed to initialize Twilio: {e}")
         
+"""
+SMS Service for sending OTP and notifications
+Enhanced with Twilio Verify Service for better reliability
+Supports Twilio Verify, basic Twilio SMS, and Azure Communication Services
+"""
+import logging
+from typing import Optional, Dict, Any
+from twilio.rest import Client as TwilioClient
+from twilio.base.exceptions import TwilioException
+from ..config import settings
+from app.services.twilio_verify_service import (
+    twilio_verify_service,
+    send_otp_verification,
+    verify_otp_code,
+    is_verify_available
+)
+
+logger = logging.getLogger(__name__)
+
+
+class SMSService:
+    """Enhanced SMS service with Twilio Verify integration and multiple provider support"""
+    
+    def __init__(self):
+        self.twilio_client = None
+        self.provider = None
+        self.verify_available = False
+        self._initialize_provider()
+    
+    def _initialize_provider(self):
+        """Initialize SMS provider based on available configuration"""
+        # Check for Twilio Verify Service first (preferred)
+        if is_verify_available():
+            self.verify_available = True
+            self.provider = "twilio_verify"
+            logger.info("Twilio Verify Service initialized successfully (preferred)")
+            return
+        
+        # Fallback to basic Twilio SMS
+        if (settings.TWILIO_ACCOUNT_SID and 
+            settings.TWILIO_AUTH_TOKEN and 
+            settings.TWILIO_PHONE_NUMBER):
+            try:
+                self.twilio_client = TwilioClient(
+                    settings.TWILIO_ACCOUNT_SID,
+                    settings.TWILIO_AUTH_TOKEN
+                )
+                self.provider = "twilio"
+                logger.info("Twilio SMS provider initialized successfully (fallback mode)")
+                return
+            except Exception as e:
+                logger.error(f"Failed to initialize Twilio: {e}")
+        
         # Could add Azure Communication Services here
         # if settings.AZURE_COMMUNICATION_CONNECTION_STRING:
         #     self.provider = "azure"
         
         logger.warning("No SMS provider configured. Using development mode.")
     
-    async def send_otp(self, mobile_number: str, otp: str = None, template_type: str = "login") -> Dict[str, Any]:
+    async def send_whatsapp(self, mobile_number: str, message: str) -> Dict[str, Any]:
         """
-        Send OTP via SMS using best available method
-        
-        Args:
-            mobile_number: Phone number in E.164 format (+1234567890)
-            otp: 6-digit OTP code (used only for basic SMS, Verify generates its own)
-            template_type: Type of OTP (login, signup, recovery)
-            
-        Returns:
-            Dict with success status and details
+        Send WhatsApp message via Twilio
         """
-        # Development mode if no provider configured
         if not self.provider:
-            dev_otp = "123456"  # Fixed development OTP
-            logger.info(f"Development mode: OTP {dev_otp} for {mobile_number}")
-            return {
-                "success": True,
-                "provider": "development",
-                "mobile_number": mobile_number,
-                "otp_code": dev_otp,
-                "message": "Development mode - use OTP: 123456"
-            }
-        
-        # Format mobile number to E.164 if needed
+            return await self._development_fallback(mobile_number)
+
         formatted_number = self._format_mobile_number(mobile_number)
         if not formatted_number:
+            return {"success": False, "error": "Invalid mobile number"}
+
+        # Twilio WhatsApp requires "whatsapp:" prefix
+        to_number = f"whatsapp:{formatted_number}"
+        from_number = f"whatsapp:{settings.TWILIO_PHONE_NUMBER}"
+
+        try:
+            if not self.twilio_client:
+                 return {"success": False, "error": "Twilio client not initialized"}
+
+            msg = self.twilio_client.messages.create(
+                body=message,
+                from_=from_number,
+                to=to_number
+            )
+            logger.info(f"WhatsApp sent: {msg.sid}")
             return {
-                "success": False,
-                "error": "Invalid mobile number format",
-                "provider": self.provider
+                "success": True,
+                "provider": "twilio_whatsapp",
+                "message_id": msg.sid,
+                "status": msg.status
             }
+        except Exception as e:
+            logger.error(f"WhatsApp failed: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def send_otp(self, mobile_number: str, otp: str = None, template_type: str = "login", channel: str = "sms") -> Dict[str, Any]:
+        """
+        Send OTP via SMS or WhatsApp
+        """
+        # Development mode
+        if not self.provider:
+            return await self._development_fallback(mobile_number, otp)
         
+        formatted_number = self._format_mobile_number(mobile_number)
+        if not formatted_number:
+            return {"success": False, "error": "Invalid mobile number"}
+
+        # WhatsApp Channel
+        if channel == "whatsapp":
+            otp_code = otp or self._generate_otp()
+            message = self._create_message(otp_code, template_type)
+            return await self.send_whatsapp(mobile_number, message)
+
+        # SMS Channel (Existing Logic)
         # Use Twilio Verify Service if available (preferred)
         if self.provider == "twilio_verify":
             try:
@@ -98,30 +172,15 @@ class SMSService:
                     return result
                 else:
                     logger.warning(f"Twilio Verify failed: {result.get('error')}, falling back to basic SMS")
-                    # Fall through to basic SMS fallback
             except Exception as e:
                 logger.error(f"Twilio Verify error: {e}, falling back to basic SMS")
-                # Fall through to basic SMS fallback
         
         # Fallback to basic Twilio SMS
-        if self.provider in ["twilio_verify", "twilio"]:
-            # Reinitialize basic Twilio client if needed
-            if not self.twilio_client and settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN:
-                try:
-                    self.twilio_client = TwilioClient(
-                        settings.TWILIO_ACCOUNT_SID,
-                        settings.TWILIO_AUTH_TOKEN
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to initialize Twilio client for fallback: {e}")
-                    return await self._development_fallback(formatted_number, otp)
-            
-            if self.twilio_client and settings.TWILIO_PHONE_NUMBER:
-                return await self._send_via_twilio(formatted_number, otp or self._generate_otp(), template_type)
+        if self.twilio_client and settings.TWILIO_PHONE_NUMBER:
+            return await self._send_via_twilio(formatted_number, otp or self._generate_otp(), template_type)
         
-        # Final fallback to development mode
         return await self._development_fallback(formatted_number, otp)
-    
+
     async def verify_otp(self, mobile_number: str, otp_code: str) -> Dict[str, Any]:
         """
         Verify OTP code using appropriate method
@@ -273,30 +332,18 @@ class SMSService:
         mobile_number: str, 
         recovery_link: str, 
         amount: str, 
-        merchant: str
+        merchant: str,
+        channel: str = "sms"
     ) -> Dict[str, Any]:
         """
         Send payment recovery notification
-        
-        Args:
-            mobile_number: Customer's mobile number
-            recovery_link: Recovery link URL
-            amount: Payment amount
-            merchant: Merchant name
-            
-        Returns:
-            Send result
         """
         if not self.provider:
             return await self._development_fallback(mobile_number)
         
         formatted_number = self._format_mobile_number(mobile_number)
         if not formatted_number:
-            return {
-                "success": False,
-                "error": "Invalid mobile number format",
-                "provider": self.provider
-            }
+            return {"success": False, "error": "Invalid mobile number"}
         
         message = (
             f"Payment Failed - TINKO Recovery\n"
@@ -305,6 +352,9 @@ class SMSService:
             f"Complete payment: {recovery_link}\n"
             f"Link expires in 24 hours."
         )
+
+        if channel == "whatsapp":
+             return await self.send_whatsapp(mobile_number, message)
         
         # Use basic Twilio for recovery notifications (not Verify)
         if self.twilio_client and settings.TWILIO_PHONE_NUMBER:
@@ -355,9 +405,9 @@ sms_service = SMSService()
 
 
 # Convenience functions
-async def send_otp_sms(mobile_number: str, otp: str = None, template_type: str = "login") -> Dict[str, Any]:
+async def send_otp_sms(mobile_number: str, otp: str = None, template_type: str = "login", channel: str = "sms") -> Dict[str, Any]:
     """Send OTP SMS"""
-    return await sms_service.send_otp(mobile_number, otp, template_type)
+    return await sms_service.send_otp(mobile_number, otp, template_type, channel)
 
 
 async def verify_otp_sms(mobile_number: str, otp_code: str) -> Dict[str, Any]:
@@ -369,11 +419,12 @@ async def send_recovery_sms(
     mobile_number: str, 
     recovery_link: str, 
     amount: str, 
-    merchant: str
+    merchant: str,
+    channel: str = "sms"
 ) -> Dict[str, Any]:
     """Send payment recovery SMS"""
     return await sms_service.send_recovery_notification(
-        mobile_number, recovery_link, amount, merchant
+        mobile_number, recovery_link, amount, merchant, channel
     )
 
 

@@ -22,10 +22,15 @@ def create_link_by_ref(transaction_ref: str, body: schemas.RecoveryLinkRequest =
     token = token_urlsafe(16)  # ~22-char URL-safe
     expires_at = datetime.now(timezone.utc) + timedelta(hours=body.ttl_hours)
 
+    # Validate channel
+    valid_channels = {"email", "sms", "whatsapp"}
+    requested_channel = body.channel or "email"
+    if requested_channel not in valid_channels:
+        raise HTTPException(status_code=400, detail=f"Invalid channel. Must be one of {valid_channels}")
+
     attempt = models.RecoveryAttempt(
         transaction_id=txn.id,
-        # Default to email channel so notifications can be delivered via retry engine
-        channel=body.channel or "email",
+        channel=requested_channel,
         token=token,
         status="created",
         expires_at=expires_at,
@@ -35,9 +40,10 @@ def create_link_by_ref(transaction_ref: str, body: schemas.RecoveryLinkRequest =
     try:
         from app.tasks.retry_tasks import schedule_retry
         # Use org_id from transaction if available for policy lookup
-        schedule_retry.delay(attempt.id, getattr(txn, 'org_id', None))
-    except Exception:
-        # Non-fatal if Celery not running; link creation should still succeed
+        schedule_retry(attempt.id, getattr(txn, 'org_id', None))
+    except Exception as e:
+        # Log error but don't fail request
+        print(f"Retry schedule failed: {e}")
         pass
 
     url = f"{BASE_URL}/pay/retry/{token}"

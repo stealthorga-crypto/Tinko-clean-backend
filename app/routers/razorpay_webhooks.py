@@ -104,4 +104,52 @@ async def webhook_razorpay(request: Request, db: Session = Depends(get_db)):
                 except Exception:
                     pass
 
+            elif etype == "payment.failed":
+                # Handle Payment Failure -> Trigger Recovery
+                txn.razorpay_payment_id = payment_id or txn.razorpay_payment_id
+                
+                # Check if open attempt exists
+                existing_attempt = (
+                    db.query(models.RecoveryAttempt)
+                    .filter(
+                        models.RecoveryAttempt.transaction_id == txn.id,
+                        models.RecoveryAttempt.status.in_(["created", "sent", "scheduled"])
+                    )
+                    .first()
+                )
+                
+                if not existing_attempt:
+                    # Create new recovery attempt
+                    from secrets import token_urlsafe
+                    from datetime import timedelta
+                    
+                    token = token_urlsafe(16)
+                    # Default to 24h expiry
+                    expires_at = datetime.utcnow() + timedelta(hours=24)
+                    
+                    # Determine channel from Org settings or default to email
+                    channel = "email"
+                    if txn.organization and txn.organization.recovery_channels:
+                        # Simple logic: pick first available
+                        channel = txn.organization.recovery_channels[0]
+                    
+                    new_attempt = models.RecoveryAttempt(
+                        transaction_id=txn.id,
+                        transaction_ref=txn.transaction_ref,
+                        channel=channel,
+                        token=token,
+                        status="created",
+                        expires_at=expires_at
+                    )
+                    db.add(new_attempt)
+                    db.commit()
+                    db.refresh(new_attempt)
+                    
+                    # Trigger Retry Task (Synchronous for now)
+                    try:
+                        from app.tasks.retry_tasks import schedule_retry
+                        schedule_retry(new_attempt.id, txn.org_id)
+                    except Exception as e:
+                        print(f"Failed to trigger retry: {e}")
+
     return {"status": "ok"}
