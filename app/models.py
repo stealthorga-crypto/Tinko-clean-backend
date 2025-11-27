@@ -42,6 +42,10 @@ class Organization(Base):
     industry = Column(String(64), nullable=True)
     gst_number = Column(String(32), nullable=True)
     
+    # Pricing / Fees
+    service_fee_percent = Column(Float, nullable=False, default=2.0)   # 2.0%
+    service_fee_fixed = Column(Integer, nullable=False, default=30)    # 30 paise
+    
     payment_gateways = Column(JSON, nullable=True, default=list)  # ["stripe", "razorpay"]
     monthly_volume = Column(String(32), nullable=True)            # "< 100", "100-1000"
     recovery_channels = Column(JSON, nullable=True, default=list) # ["whatsapp", "email"]
@@ -188,6 +192,11 @@ class Transaction(Base):
 
     amount = Column(Integer, nullable=True)
     currency = Column(String(8), nullable=True)
+    
+    # Fee breakdown (stored at creation/capture)
+    service_fee = Column(Integer, nullable=True)  # in paise
+    net_amount = Column(Integer, nullable=True)   # amount - service_fee
+    
     org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"),
                     nullable=True, index=True)
 

@@ -75,6 +75,7 @@ app.include_router(auth.router, prefix="/v1/auth", tags=["Auth"])
 app.include_router(customer_api.router, prefix="/v1/customer", tags=["Customer"])
 
 # Payments
+# Payments
 app.include_router(payments.router, prefix="/v1/payments", tags=["Payments"])
 app.include_router(payments_razorpay.router, prefix="/v1/payments/razorpay", tags=["Razorpay"])
 app.include_router(stripe_payments.router, prefix="/v1/payments/stripe", tags=["Stripe"])
