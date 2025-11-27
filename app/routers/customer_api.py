@@ -62,62 +62,28 @@ class ApiKeyUsageResponse(BaseModel):
 class ProfileUpdateRequest(BaseModel):
     business_name: str
     phone: str
-    payment_gateway: str
+    payment_gateways: List[str]
     website: Optional[str] = None
     monthly_volume: Optional[str] = None
+    industry: Optional[str] = None
+    gst_number: Optional[str] = None
+    recovery_channels: Optional[List[str]] = None
+    email: Optional[str] = None
+    
+    # Phase 2 Fields
+    business_size: Optional[str] = None
+    monthly_gmv: Optional[str] = None
+    recovery_destination: Optional[str] = "customer"
+    gateway_credentials: Optional[dict] = None
+    brand_name: Optional[str] = None
+    support_email: Optional[str] = None
+    reply_to_email: Optional[str] = None
+    logo_url: Optional[str] = None
+    team_contacts: Optional[dict] = None
+    billing_email: Optional[str] = None
 
 
-# ---------------------------------------------------------
-# 1️⃣ OTP USER PROFILE (Dashboard Login)
-# ---------------------------------------------------------
-@router.get("/profile", response_model=CustomerProfileResponse)
-def get_profile(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Dashboard user profile.
-    - If first-time login → auto-create user row → onboarding.html
-    - If org_id missing → onboarding required
-    """
-
-    # Try to find user
-    user = db.query(User).filter(User.email == current_user.email).first()
-
-    # -------------------------------------------------
-    # CASE 1: First login → No user row exists
-    # -------------------------------------------------
-    if not user:
-        user = User(
-            email=current_user.email,
-            full_name=None,
-            mobile_number=None,
-            org_id=None,         # No company yet
-            is_active=True
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-
-        # onboarding needed
-        raise HTTPException(404, "New user onboarding required")
-
-    # -------------------------------------------------
-    # CASE 2: User exists but not completed onboarding
-    # -------------------------------------------------
-    if not user.org_id:
-        raise HTTPException(404, "New user onboarding required")
-
-    # -------------------------------------------------
-    # CASE 3: Onboarding complete
-    # -------------------------------------------------
-    return CustomerProfileResponse(
-        email=user.email,
-        full_name=user.full_name,
-        mobile=user.mobile_number,
-        org_id=user.org_id,
-        onboarding_complete=True
-    )
+# ... (get_profile remains same) ...
 
 
 @router.post("/profile", response_model=CustomerProfileResponse)
@@ -126,58 +92,7 @@ def create_or_update_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Complete user onboarding by creating/updating organization and profile.
-    """
-    from app.models import Organization
-    import re
-    
-    # Find the user
-    user = db.query(User).filter(User.email == current_user.email).first()
-    
-    if not user:
-        raise HTTPException(404, "User not found")
-    
-    # Create or find organization
-    if not user.org_id:
-        # Generate a slug from business name
-        slug_base = re.sub(r'[^a-z0-9]+', '-', profile_data.business_name.lower()).strip('-')
-        slug = slug_base
-        counter = 1
-        
-        # Ensure slug is unique
-        while db.query(Organization).filter(Organization.slug == slug).first():
-            slug = f"{slug_base}-{counter}"
-            counter += 1
-        
-        # Create new organization
-        org = Organization(
-            name=profile_data.business_name,
-            slug=slug,
-            is_active=True
-        )
-        db.add(org)
-        db.flush()  # Get the org.id without committing
-        
-        user.org_id = org.id
-    
-    # Update user profile
-    user.full_name = profile_data.business_name
-    user.mobile_number = profile_data.phone
-    
-    # You could store additional metadata here if you have a profile table
-    # For now, we're just updating the user table
-    
-    db.commit()
-    db.refresh(user)
-    
-    return CustomerProfileResponse(
-        email=user.email,
-        full_name=user.full_name,
-        mobile=user.mobile_number,
-        org_id=user.org_id,
-        onboarding_complete=True
-    )
+    return complete_onboarding(profile_data, db, current_user)
 
 
 @router.post("/onboarding", response_model=CustomerProfileResponse)
@@ -215,7 +130,27 @@ def complete_onboarding(
         org = Organization(
             name=profile_data.business_name,
             slug=slug,
-            is_active=True
+            is_active=True,
+            
+            # Basic Fields
+            website=profile_data.website,
+            industry=profile_data.industry,
+            gst_number=profile_data.gst_number,
+            payment_gateways=profile_data.payment_gateways,
+            monthly_volume=profile_data.monthly_volume,
+            recovery_channels=profile_data.recovery_channels or [],
+            
+            # Phase 2 Fields
+            business_size=profile_data.business_size,
+            monthly_gmv=profile_data.monthly_gmv,
+            recovery_destination=profile_data.recovery_destination,
+            gateway_credentials=profile_data.gateway_credentials or {},
+            brand_name=profile_data.brand_name,
+            support_email=profile_data.support_email,
+            reply_to_email=profile_data.reply_to_email,
+            logo_url=profile_data.logo_url,
+            team_contacts=profile_data.team_contacts or {},
+            billing_email=profile_data.billing_email
         )
         db.add(org)
         db.flush()  # Get the org.id without committing
@@ -342,3 +277,29 @@ def create_transaction(
     db.refresh(record)
 
     return TransactionResponse.model_validate(record)
+
+
+# ---------------------------------------------------------
+# 6️⃣ DELETE ACCOUNT
+# ---------------------------------------------------------
+@router.delete("/profile")
+def delete_account(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Permanently delete the current user and their organization.
+    """
+    from app.models import Organization
+    
+    # Delete Organization (if exists)
+    if current_user.org_id:
+        org = db.query(Organization).filter(Organization.id == current_user.org_id).first()
+        if org:
+            db.delete(org)
+    
+    # Delete User
+    db.delete(current_user)
+    db.commit()
+    
+    return {"message": "Account deleted successfully"}

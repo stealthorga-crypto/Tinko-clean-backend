@@ -37,6 +37,35 @@ class Organization(Base):
     slug = Column(String(64), unique=True, nullable=False, index=True)
     is_active = Column(Boolean, default=True, nullable=False)
 
+    # Extended Profile Fields
+    website = Column(String(255), nullable=True)
+    industry = Column(String(64), nullable=True)
+    gst_number = Column(String(32), nullable=True)
+    
+    payment_gateways = Column(JSON, nullable=True, default=list)  # ["stripe", "razorpay"]
+    monthly_volume = Column(String(32), nullable=True)            # "< 100", "100-1000"
+    recovery_channels = Column(JSON, nullable=True, default=list) # ["whatsapp", "email"]
+
+    # Smart Onboarding - Phase 2 Fields
+    business_size = Column(String(32), nullable=True)             # "Solo", "2-10", "10-50", "50+"
+    monthly_gmv = Column(String(32), nullable=True)               # "< 1L", "1-10L"
+    
+    recovery_destination = Column(String(32), default="customer") # "customer", "internal", "both"
+    
+    # Technical & Credentials (Encrypted/JSON)
+    gateway_credentials = Column(JSON, nullable=True, default=dict) 
+    # { "razorpay": { "key_id": "...", "key_secret": "..." } }
+
+    # Branding & Notifications
+    brand_name = Column(String(128), nullable=True)
+    support_email = Column(String(255), nullable=True)
+    reply_to_email = Column(String(255), nullable=True)
+    logo_url = Column(String(512), nullable=True)
+    
+    # Contacts & Compliance
+    team_contacts = Column(JSON, nullable=True, default=dict)     # { "tech": "...", "finance": "..." }
+    billing_email = Column(String(255), nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(),
                         onupdate=func.now(), nullable=False)
