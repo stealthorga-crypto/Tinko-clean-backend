@@ -1,15 +1,20 @@
+# app/main.py
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-# Load .env
+# ---------------------------------------------
+# LOAD ENVIRONMENT VARIABLES
+# ---------------------------------------------
 load_dotenv()
 
-# Routers
+# ---------------------------------------------
+# IMPORT ROUTERS
+# ---------------------------------------------
 from app.routers import (
     health,
     auth,
-    email_auth,
     customer_api,
     payments,
     payments_razorpay,
@@ -30,6 +35,11 @@ from app.routers import (
     dev,
     admin_db,
     early_access,
+
+    # NEW ONBOARDING ROUTERS
+    onboarding,
+    onboarding_credentials,
+    onboarding_finish,
 )
 
 # ---------------------------------------------
@@ -45,7 +55,7 @@ app = FastAPI(
 # ---------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # restrict later
+    allow_origins=["*"],  # tighten later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,71 +65,72 @@ app.add_middleware(
 # ROUTERS
 # ---------------------------------------------
 
-# Health first (Render depends on this)
+# Health
 app.include_router(health.router, prefix="/health", tags=["Health"])
 
-# AUTH
+# Auth
 app.include_router(auth.router, prefix="/v1/auth", tags=["Auth"])
-app.include_router(email_auth.router, prefix="/v1/auth", tags=["Auth"])
 
-# CUSTOMER
+# Customer API
 app.include_router(customer_api.router, prefix="/v1/customer", tags=["Customer"])
 
-# PAYMENTS
+# Payments
 app.include_router(payments.router, prefix="/v1/payments", tags=["Payments"])
 app.include_router(payments_razorpay.router, prefix="/v1/payments/razorpay", tags=["Razorpay"])
 app.include_router(stripe_payments.router, prefix="/v1/payments/stripe", tags=["Stripe"])
 
-# WEBHOOKS
+# Webhooks
 app.include_router(razorpay_webhooks.router, prefix="/v1/webhooks/razorpay", tags=["Razorpay Webhooks"])
 app.include_router(webhooks_stripe.router, prefix="/v1/webhooks/stripe", tags=["Stripe Webhooks"])
 
-# RECOVERIES
+# Recovery
 app.include_router(recoveries.router, prefix="/v1/recoveries", tags=["Recoveries"])
 app.include_router(recovery_links.router, prefix="/v1/recovery-links", tags=["Recovery Links"])
 
-# RETRY
+# Retry Engine
 app.include_router(retry.router, prefix="/v1/retry", tags=["Retry"])
 app.include_router(retry_policies.router, prefix="/v1/retry/policies", tags=["Retry Policies"])
 
-# EVENTS
+# Events
 app.include_router(events.router, prefix="/v1/events", tags=["Events"])
 
-# ANALYTICS
+# Analytics
 app.include_router(analytics.router, prefix="/v1/analytics", tags=["Analytics"])
 
-# SCHEDULE
+# Schedule
 app.include_router(schedule.router, prefix="/v1/schedule", tags=["Schedule"])
 
-# RECON
+# Reconciliation
 app.include_router(recon.router, prefix="/v1/recon", tags=["Reconciliation"])
 
-# MAINTENANCE
+# Maintenance
 app.include_router(maintenance.router, prefix="/v1/maintenance", tags=["Maintenance"])
 
-# PROFILE
+# Profile
 app.include_router(profile.router, prefix="/v1/profile", tags=["Profile"])
 
-# CLASSIFIER
+# Classifier
 app.include_router(classifier.router, prefix="/v1/classify", tags=["Classifier"])
 
-# DEV
+# Developer Tools
 app.include_router(dev.router, prefix="/_dev", tags=["Developer"])
 
-# ADMIN DB
+# Admin DB Tools
 app.include_router(admin_db.router, prefix="/admin/db", tags=["Admin DB"])
 
-# EARLY ACCESS
+# Early Access
 app.include_router(early_access.router, prefix="/v1/early-access", tags=["Early Access"])
 
+# ---------------------------------------------
+# ONBOARDING (CLEAN + CORRECT)
+# ---------------------------------------------
+app.include_router(onboarding, prefix="/v1/onboarding", tags=["Onboarding"])
+app.include_router(onboarding_credentials, prefix="/v1/onboarding", tags=["Onboarding"])
+app.include_router(onboarding_finish, prefix="/v1/onboarding", tags=["Onboarding"])
 
 # ---------------------------------------------
-# ROOT (Render health + dev smoke test)
+# ROOT ENDPOINT
 # ---------------------------------------------
 @app.get("/")
 def root():
     return {"message": "Tinko Backend is running"}
-
-
-# 🚫 DO NOT re-declare app again
-# app = FastAPI()  <-- removed

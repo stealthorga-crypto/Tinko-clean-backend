@@ -1,49 +1,32 @@
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import inspect
-from typing import Any, Dict, List
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 
-from ..db import Base, engine
-from ..deps import require_roles_or_token
+from app.deps import get_db, get_current_user
+from app.models import User
 
-# Ensure models are imported so Base.metadata is populated
-import app.models  # noqa: F401
-
-router = APIRouter(
-    tags=["admin", "db"],
-    dependencies=[Depends(require_roles_or_token(["admin"]))],
-)
+router = APIRouter(tags=["Admin DB"])
 
 
-@router.get("/verify")
-def verify_database(create: bool = Query(False, description="Create any missing ORM tables if true")) -> Dict[str, Any]:
+@router.get("/stats")
+def get_db_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
-    Inspect the connected database and compare existing tables with SQLAlchemy models.
-
-    - Returns lists of expected (from ORM) and existing (from DB) tables
-    - When `create=true`, will create any missing ORM tables and re-check
+    Simple DB stats endpoint.
+    Only requires authenticated dashboard user.
     """
-    insp = inspect(engine)
-    existing: List[str] = sorted(insp.get_table_names(schema="public"))
-    expected: List[str] = sorted(list(Base.metadata.tables.keys()))
 
-    missing_before = sorted([t for t in expected if t not in set(existing)])
+    # Optional: Restrict only yourself (founder)
+    # if current_user.email != "sadish@tinko.in":
+    #     raise HTTPException(403, "Not allowed")
 
-    created = False
-    if create and missing_before:
-        Base.metadata.create_all(bind=engine)
-        insp = inspect(engine)
-        existing = sorted(insp.get_table_names(schema="public"))
-        created = True
-
-    missing_after = sorted([t for t in expected if t not in set(existing)])
+    try:
+        user_count = db.execute("SELECT COUNT(*) FROM users").scalar()
+    except Exception:
+        user_count = "N/A"
 
     return {
-        "dialect": engine.dialect.name,
-        "driver": getattr(engine.dialect, "driver", None),
-        "expected_tables": expected,
-        "existing_tables": existing,
-        "missing_before": missing_before,
-        "missing_after": missing_after,
-        "created": created and not missing_after,
-        "ok": len(missing_after) == 0,
+        "db_status": "ok",
+        "user_count": user_count
     }

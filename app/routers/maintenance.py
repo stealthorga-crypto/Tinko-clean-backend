@@ -1,17 +1,23 @@
-from fastapi import APIRouter, Depends, Query
-from app.deps import require_roles_or_token
-from app.services.partition_service import ensure_current_month_partitions, prune_old_partitions
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
-router = APIRouter(tags=["maintenance"])
+from app.deps import get_db, get_current_user
+from app.models import User
 
-@router.post("/partition/ensure_current")
-def ensure_current_partition(user=Depends(require_roles_or_token(["admin"]))):
-    created = ensure_current_month_partitions()
-    return {"ok": True, "created": created}
+router = APIRouter(tags=["Maintenance"])
 
 
-@router.post("/partitions/prune")
-def prune_partitions(months: int = Query(6, ge=1, le=60), user=Depends(require_roles_or_token(["admin"]))):
-    """Prune old partitions. For SQLite or non-partitioned DBs, returns ok without action."""
-    pruned = prune_old_partitions(months=months)
-    return {"ok": True, "pruned": pruned}
+@router.get("/ping")
+def maintenance_ping(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Simple maintenance endpoint.
+    Used mainly to verify app health with authenticated access.
+    """
+    return {
+        "status": "ok",
+        "message": "Maintenance route reachable",
+        "user": current_user.email,
+    }

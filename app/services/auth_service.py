@@ -1,30 +1,73 @@
+import os
 import random
-import string
 import time
+from fastapi import HTTPException
+from jose import jwt, JWTError
 
-# Store OTPs temporarily in memory (Redis later)
-OTP_STORE = {}
+# ===============================
+# JWT CONFIG
+# ===============================
+JWT_SECRET = os.getenv("JWT_SECRET", "localdevsecret")
+JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 
-def generate_otp(length: int = 6) -> str:
-    return ''.join(random.choices(string.digits, k=length))
+# ===============================
+# IN-MEMORY OTP STORE (LOCAL TESTING)
+# ===============================
+# For production you will replace this with DB or Redis
+OTP_STORE = {}  # { email: { "otp": "1234", "expires": 1234567890 } }
 
+
+# ===============================
+# JWT VERIFY
+# ===============================
+def verify_access_token(token: str):
+    """
+    Decodes JWT access token and returns payload.
+    """
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
+# ===============================
+# OTP GENERATION
+# ===============================
+def generate_otp():
+    """Generate 6-digit numeric OTP."""
+    return str(random.randint(100000, 999999))
+
+
+# ===============================
+# SAVE OTP
+# ===============================
 def save_otp(email: str, otp: str):
+    """Save OTP to in-memory store with 5-minute expiry."""
     OTP_STORE[email] = {
         "otp": otp,
-        "expires_at": time.time() + 300  # expires in 5 minutes
+        "expires": time.time() + 300  # 5 minutes
     }
 
-def validate_otp(email: str, otp: str) -> bool:
-    data = OTP_STORE.get(email)
-    if not data:
-        return False
 
-    if time.time() > data["expires_at"]:
-        OTP_STORE.pop(email, None)
-        return False
+# ===============================
+# VALIDATE OTP
+# ===============================
+def validate_otp(email: str, otp: str):
+    """
+    Validates OTP entered by user.
+    """
+    if email not in OTP_STORE:
+        raise HTTPException(status_code=400, detail="OTP not found")
 
-    if data["otp"] != otp:
-        return False
+    record = OTP_STORE[email]
 
-    OTP_STORE.pop(email, None)
+    if time.time() > record["expires"]:
+        raise HTTPException(status_code=400, detail="OTP expired")
+
+    if otp != record["otp"]:
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+
+    # OTP is valid → cleanup
+    del OTP_STORE[email]
     return True

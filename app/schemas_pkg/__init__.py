@@ -15,6 +15,16 @@ from .recoveries import (
     RecoveryAttemptsResponse,
 )
 
+# Onboarding schemas (ALL)
+from .onboarding import (
+    GatewaySelectRequest,
+    GatewaySelectResponse,
+    OnboardingStartRequest,
+    OnboardingStartResponse,
+    OnboardingCompleteRequest,
+    OnboardingCompleteResponse,
+)
+
 __all__ = [
     # OTP
     "SendOTPRequest",
@@ -26,4 +36,12 @@ __all__ = [
     "RecoveryLinkOut",
     "RecoveryAttemptOut",
     "RecoveryAttemptsResponse",
+
+    # Onboarding
+    "GatewaySelectRequest",
+    "GatewaySelectResponse",
+    "OnboardingStartRequest",
+    "OnboardingStartResponse",
+    "OnboardingCompleteRequest",
+    "OnboardingCompleteResponse",
 ]
