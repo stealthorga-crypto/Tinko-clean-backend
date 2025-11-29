@@ -18,10 +18,14 @@ if not FROM_EMAIL:
     logger.error("❌ SENDGRID_FROM_EMAIL missing.")
 
 
-async def send_email(to_email: str, subject: str, text: str, html: str):
-    """Core SendGrid wrapper"""
+from app.services.task_queue import register_task, enqueue_job
+
+@register_task("send_email")
+def send_email_task(to_email: str, subject: str, text: str, html: str):
+    """Core SendGrid wrapper (Synchronous Task)"""
     if not SENDGRID_API_KEY or not FROM_EMAIL:
-        raise HTTPException(500, "Email service not configured")
+        logger.error("Email service not configured")
+        return False
 
     try:
         message = Mail(
@@ -40,7 +44,27 @@ async def send_email(to_email: str, subject: str, text: str, html: str):
 
     except Exception as e:
         logger.error(f"❌ SendGrid Error: {e}")
-        raise HTTPException(500, f"SendGrid failed: {e}")
+        # We don't raise here so the worker doesn't crash, but we could let it fail to trigger retry
+        raise e
+
+
+async def send_email(to_email: str, subject: str, text: str, html: str, background: bool = True):
+    """
+    Send email. 
+    If background=True (default), enqueues job.
+    If background=False, sends immediately (blocking).
+    """
+    if not background:
+        return send_email_task(to_email, subject, text, html)
+
+    job_id = enqueue_job("send_email", {
+        "to_email": to_email,
+        "subject": subject,
+        "text": text,
+        "html": html
+    })
+    logger.info(f"Email task enqueued: Job {job_id}")
+    return True
 
 
 def build_otp_template(otp: str):
@@ -61,11 +85,12 @@ def build_otp_template(otp: str):
 
 
 async def send_email_otp(to_email: str, otp: str):
-    """Send OTP email"""
+    """Send OTP email (Synchronous for reliability)"""
     text, html = build_otp_template(otp)
     return await send_email(
         to_email=to_email,
         subject="Your Tinko Verification Code",
         text=text,
         html=html,
+        background=False  # Force synchronous sending
     )

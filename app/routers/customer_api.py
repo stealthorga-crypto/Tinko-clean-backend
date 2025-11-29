@@ -175,6 +175,55 @@ def complete_onboarding(
         db.flush()  # Get the org.id without committing
         
         user.org_id = org.id
+    else:
+        # Update existing organization
+        org = db.query(Organization).filter(Organization.id == user.org_id).first()
+        if org:
+            # Track changes for audit log
+            changes = {}
+            
+            # Update fields if provided (partial update logic)
+            if profile_data.business_name and org.name != profile_data.business_name:
+                changes["name"] = {"old": org.name, "new": profile_data.business_name}
+                org.name = profile_data.business_name
+                
+            if profile_data.recovery_channels is not None and org.recovery_channels != profile_data.recovery_channels:
+                changes["recovery_channels"] = {"old": org.recovery_channels, "new": profile_data.recovery_channels}
+                org.recovery_channels = profile_data.recovery_channels
+            
+            # ... (other fields can be added similarly, keeping it simple for now)
+            
+            if profile_data.website: org.website = profile_data.website
+            if profile_data.industry: org.industry = profile_data.industry
+            if profile_data.gst_number: org.gst_number = profile_data.gst_number
+            if profile_data.payment_gateways: org.payment_gateways = profile_data.payment_gateways
+            if profile_data.monthly_volume: org.monthly_volume = profile_data.monthly_volume
+            
+            # Phase 2 Fields
+            if profile_data.business_size: org.business_size = profile_data.business_size
+            if profile_data.monthly_gmv: org.monthly_gmv = profile_data.monthly_gmv
+            if profile_data.recovery_destination: org.recovery_destination = profile_data.recovery_destination
+            if profile_data.gateway_credentials: 
+                org.gateway_credentials = profile_data.gateway_credentials
+            if profile_data.brand_name: org.brand_name = profile_data.brand_name
+            if profile_data.support_email: org.support_email = profile_data.support_email
+            if profile_data.reply_to_email: org.reply_to_email = profile_data.reply_to_email
+            if profile_data.logo_url: org.logo_url = profile_data.logo_url
+            if profile_data.team_contacts: org.team_contacts = profile_data.team_contacts
+            if profile_data.billing_email: org.billing_email = profile_data.billing_email
+            
+            # Log Audit if changes detected
+            if changes:
+                from app.services.audit_service import log_audit
+                log_audit(
+                    db,
+                    org_id=org.id,
+                    user_id=user.id,
+                    action="update_organization",
+                    resource_type="organization",
+                    resource_id=str(org.id),
+                    changes=changes
+                )
     
     # Update user profile
     user.full_name = profile_data.business_name

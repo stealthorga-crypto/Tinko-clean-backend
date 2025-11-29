@@ -56,7 +56,14 @@ def update_retry_policy(policy_id: int, data: dict):
 # ---------------------------------------------------------
 # SCHEDULE RETRY (used internally by recovery pipeline)
 # ---------------------------------------------------------
-def schedule_retry(attempt_id: int, org_id: int = None):
+from app.services.task_queue import register_task, enqueue_job
+
+# ---------------------------------------------------------
+# SCHEDULE RETRY (used internally by recovery pipeline)
+# ---------------------------------------------------------
+
+@register_task("execute_retry_attempt")
+def execute_retry_attempt_task(attempt_id: int, org_id: int = None):
     """
     Execute retry attempt: Send recovery link via configured channel.
     """
@@ -92,30 +99,28 @@ def schedule_retry(attempt_id: int, org_id: int = None):
         success = False
         error_msg = None
         
-        if attempt.channel == "email" and txn.customer_email:
-            # Send Email
+        # Determine channels to use
+        # Use Organization settings, fallback to attempt.channel
+        channels = txn.organization.recovery_channels if txn.organization and txn.organization.recovery_channels else [attempt.channel]
+        
+        # Send Notifications
+        results = {}
+        
+        # 1. EMAIL
+        if "email" in channels and txn.customer_email:
             try:
+                link_email = f"{recovery_link}?channel=email"
                 html_content = f"""
                 <div style="font-family: sans-serif; padding: 20px;">
                     <h2>Payment Failed</h2>
                     <p>Hi,</p>
                     <p>Your payment of <strong>{amount_fmt}</strong> to <strong>{merchant_name}</strong> failed.</p>
                     <p>You can retry the payment securely using the link below:</p>
-                    <a href="{recovery_link}" style="background: #DE6B06; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Retry Payment</a>
+                    <a href="{link_email}" style="background: #DE6B06; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Retry Payment</a>
                     <p style="margin-top: 20px; font-size: 12px; color: #666;">Link expires in 24 hours.</p>
                 </div>
                 """
                 import asyncio
-                # Run async email send in sync context
-                # Note: In production, this should be truly async or background task
-                # For now, we just fire and hope (or use a helper if needed)
-                # Since we are in a sync function, we can't await. 
-                # We will use a simple wrapper or just assume it works if we had a sync client.
-                # But email_service is async. 
-                # HACK: Create a new loop or run in existing loop if possible.
-                # Ideally this entire file should be async or use background tasks.
-                # For this "stub" replacement, we'll try to run it.
-                
                 try:
                     loop = asyncio.get_event_loop()
                 except RuntimeError:
@@ -125,17 +130,18 @@ def schedule_retry(attempt_id: int, org_id: int = None):
                 loop.run_until_complete(send_email(
                     to_email=txn.customer_email,
                     subject=f"Action Required: Payment to {merchant_name} Failed",
-                    text=f"Retry your payment here: {recovery_link}",
+                    text=f"Retry your payment here: {link_email}",
                     html=html_content
                 ))
-                success = True
+                results["email"] = "sent"
             except Exception as e:
-                error_msg = str(e)
                 logger.error(f"Email send failed: {e}")
+                results["email"] = f"failed: {e}"
 
-        elif attempt.channel in ["sms", "whatsapp"] and txn.customer_phone:
-            # Send SMS/WhatsApp
+        # 2. SMS
+        if "sms" in channels and txn.customer_phone:
             try:
+                link_sms = f"{recovery_link}?channel=sms"
                 import asyncio
                 try:
                     loop = asyncio.get_event_loop()
@@ -145,39 +151,62 @@ def schedule_retry(attempt_id: int, org_id: int = None):
 
                 res = loop.run_until_complete(send_recovery_sms(
                     mobile_number=txn.customer_phone,
-                    recovery_link=recovery_link,
+                    recovery_link=link_sms,
                     amount=amount_fmt,
                     merchant=merchant_name,
-                    channel=attempt.channel
+                    channel="sms"
                 ))
                 if res.get("success"):
-                    success = True
+                    results["sms"] = "sent"
                 else:
-                    error_msg = res.get("error")
+                    results["sms"] = f"failed: {res.get('error')}"
             except Exception as e:
-                error_msg = str(e)
-                logger.error(f"SMS/WA send failed: {e}")
+                logger.error(f"SMS send failed: {e}")
+                results["sms"] = f"failed: {e}"
+
+        # 3. WHATSAPP
+        if "whatsapp" in channels and txn.customer_phone:
+            try:
+                link_wa = f"{recovery_link}?channel=whatsapp"
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+                # Assuming send_recovery_sms handles 'whatsapp' channel arg correctly
+                res = loop.run_until_complete(send_recovery_sms(
+                    mobile_number=txn.customer_phone,
+                    recovery_link=link_wa,
+                    amount=amount_fmt,
+                    merchant=merchant_name,
+                    channel="whatsapp"
+                ))
+                if res.get("success"):
+                    results["whatsapp"] = "sent"
+                else:
+                    results["whatsapp"] = f"failed: {res.get('error')}"
+            except Exception as e:
+                logger.error(f"WhatsApp send failed: {e}")
+                results["whatsapp"] = f"failed: {e}"
         
-        else:
-            error_msg = "No valid contact info for channel"
-            logger.warning(f"Cannot send recovery: {error_msg}")
-
         # Update Attempt Status
-        if success:
+        # If at least one sent, mark as sent
+        if any(v == "sent" for v in results.values()):
             attempt.status = "sent"
-        else:
-            # Keep as created or failed?
-            pass
-
-        # Log Notification
-        log = models.NotificationLog(
-            recovery_attempt_id=attempt.id,
-            channel=attempt.channel,
-            recipient=txn.customer_email if attempt.channel == "email" else txn.customer_phone,
-            status="sent" if success else "failed",
-            error_message=error_msg
-        )
-        db.add(log)
+        
+        # Log Notifications (One log per channel)
+        for ch, status in results.items():
+            log = models.NotificationLog(
+                recovery_attempt_id=attempt.id,
+                channel=ch,
+                recipient=txn.customer_email if ch == "email" else txn.customer_phone,
+                status="sent" if status == "sent" else "failed",
+                error_message=status if status != "sent" else None
+            )
+            db.add(log)
+        
         db.commit()
 
     except Exception as e:
@@ -185,7 +214,10 @@ def schedule_retry(attempt_id: int, org_id: int = None):
     finally:
         db.close()
 
-    return {
-        "message": "Retry processed",
-        "attempt_id": attempt_id
-    }
+def schedule_retry(attempt_id: int, org_id: int = None, delay_minutes: int = 0):
+    """
+    Enqueue the retry attempt.
+    """
+    job_id = enqueue_job("execute_retry_attempt", {"attempt_id": attempt_id, "org_id": org_id}, delay_minutes=delay_minutes)
+    logger.info(f"Retry attempt {attempt_id} enqueued: Job {job_id} (delay={delay_minutes}m)")
+    return job_id

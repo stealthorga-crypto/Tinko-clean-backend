@@ -33,17 +33,37 @@ def classify_failure(code: str | None, message: str | None) -> str:
 
 def next_retry_options(category: str) -> Dict:
     if category in ("network", "auth_timeout"):
-        return {"recommendation": "Retry same method with fresh auth",
-                "alt": ["upi_collect", "netbanking"],
-                "cooldown_seconds": 30}
+        return {
+            "recommendation": "Retry same method with fresh auth",
+            "alt": ["upi_collect", "netbanking"],
+            "cooldown_seconds": 30,
+            "schedule_strategy": "network_retry",
+            "delays_minutes": [0, 5] # Immediate + 5 mins
+        }
     if category == "funds":
-        return {"recommendation": "Suggest alternate method",
-                "alt": ["netbanking", "card_other_bank", "upi_collect"]}
+        return {
+            "recommendation": "Suggest alternate method",
+            "alt": ["netbanking", "card_other_bank", "upi_collect"],
+            "schedule_strategy": "payday", # Wait for 5th/15th
+            "delays_minutes": [] 
+        }
     if category == "issuer_decline":
-        return {"recommendation": "Try alternate card or netbanking",
-                "alt": ["card_other_bank", "netbanking", "upi_collect"]}
+        return {
+            "recommendation": "Try alternate card or netbanking",
+            "alt": ["card_other_bank", "netbanking", "upi_collect"],
+            "schedule_strategy": "standard",
+            "delays_minutes": [0]
+        }
     if category == "upi_pending":
-        return {"recommendation": "Poll or provide cancel+alternate",
-                "alt": ["netbanking", "card"]}
-    return {"recommendation": "Offer alternate method",
-            "alt": ["upi_collect", "netbanking", "card"]}
+        return {
+            "recommendation": "Poll or provide cancel+alternate",
+            "alt": ["netbanking", "card"],
+            "schedule_strategy": "poll",
+            "delays_minutes": [0, 2, 5]
+        }
+    return {
+        "recommendation": "Offer alternate method",
+        "alt": ["upi_collect", "netbanking", "card"],
+        "schedule_strategy": "standard",
+        "delays_minutes": [0]
+    }

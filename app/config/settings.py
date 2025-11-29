@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     OTP_RATE_LIMIT_PER_MOBILE: int = 3  # per hour
     OTP_RATE_LIMIT_PER_IP: int = 10     # per hour
     
+    # Razorpay OAuth
+    RAZORPAY_CLIENT_ID: Optional[str] = os.getenv("RAZORPAY_CLIENT_ID")
+    RAZORPAY_CLIENT_SECRET: Optional[str] = os.getenv("RAZORPAY_CLIENT_SECRET")
+    RAZORPAY_REDIRECT_URI: str = os.getenv("RAZORPAY_REDIRECT_URI", "http://localhost:8000/v1/razorpay/callback")
+
     # Security
     BCRYPT_ROUNDS: int = 12
     

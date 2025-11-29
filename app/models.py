@@ -19,7 +19,7 @@ This file defines the full data model for:
 
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, ForeignKey,
-    JSON, func, UniqueConstraint, Index
+    JSON, func, UniqueConstraint, Index, Float
 )
 from sqlalchemy.orm import relationship
 from .db import Base
@@ -57,8 +57,8 @@ class Organization(Base):
     recovery_destination = Column(String(32), default="customer") # "customer", "internal", "both"
     
     # Technical & Credentials (Encrypted/JSON)
-    gateway_credentials = Column(JSON, nullable=True, default=dict) 
-    # { "razorpay": { "key_id": "...", "key_secret": "..." } }
+    # Structure: { "razorpay": { "auth_type": "oauth", "access_token": "...", "refresh_token": "...", "expires_at": ... }, "cashfree": { "auth_type": "manual", "app_id": "...", "secret_key": "..." } }
+    gateway_credentials = Column(JSON, nullable=True, default=dict)
 
     # Branding & Notifications
     brand_name = Column(String(128), nullable=True)
@@ -485,3 +485,81 @@ class UserSession(Base):
 
     def __repr__(self):
         return f"<UserSession(user_id={self.user_id}, active={self.is_active})>"
+
+
+# =====================================================
+# JOB QUEUE MODEL
+# =====================================================
+
+class Job(Base):
+    __tablename__ = "jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    task_name = Column(String(128), nullable=False, index=True)
+    arguments = Column(JSON, nullable=False, default=dict)
+    
+    status = Column(String(32), default="pending", nullable=False, index=True) # pending, running, completed, failed
+    
+    scheduled_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    error = Column(String, nullable=True)
+    retry_count = Column(Integer, default=0, nullable=False)
+
+    def __repr__(self):
+        return f"<Job(id={self.id}, task={self.task_name}, status={self.status})>"
+
+
+# =====================================================
+# WEBHOOK EVENT LOG (Dead Letter Queue)
+# =====================================================
+
+class WebhookEvent(Base):
+    __tablename__ = "webhook_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String(32), nullable=False, index=True) # razorpay, stripe
+    
+    headers = Column(JSON, nullable=True)
+    payload = Column(JSON, nullable=False)
+    
+    status = Column(String(32), default="received", nullable=False, index=True) # received, processed, failed
+    error = Column(String, nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self):
+        return f"<WebhookEvent(id={self.id}, provider={self.provider}, status={self.status})>"
+
+
+# =====================================================
+# AUDIT LOG MODEL (Enterprise Security)
+# =====================================================
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    org_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    
+    action = Column(String(64), nullable=False)  # e.g., "update_profile", "change_gateway"
+    resource_type = Column(String(64), nullable=False) # e.g., "organization", "user"
+    resource_id = Column(String(64), nullable=True)
+    
+    changes = Column(JSON, nullable=True) # { "field": { "old": "val", "new": "val" } }
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    organization = relationship("Organization")
+    user = relationship("User")
+
+    def __repr__(self):
+        return f"<AuditLog(action={self.action}, user={self.user_id})>"

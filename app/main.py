@@ -40,6 +40,9 @@ from app.routers import (
     onboarding,
     onboarding_credentials,
     onboarding_finish,
+    gateways,
+    pay,
+    razorpay_oauth,
 )
 
 # ---------------------------------------------
@@ -60,6 +63,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from fastapi.staticfiles import StaticFiles
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ---------------------------------------------
 # ROUTERS
@@ -128,6 +134,15 @@ app.include_router(early_access.router, prefix="/v1/early-access", tags=["Early 
 app.include_router(onboarding, prefix="/v1/onboarding", tags=["Onboarding"])
 app.include_router(onboarding_credentials, prefix="/v1/onboarding", tags=["Onboarding"])
 app.include_router(onboarding_finish, prefix="/v1/onboarding", tags=["Onboarding"])
+
+# Gateways
+app.include_router(gateways.router, prefix="/v1/gateways", tags=["Gateways"])
+
+# Payment Pages (Magic Links)
+app.include_router(pay.router, tags=["Payment Pages"])
+
+# Razorpay OAuth
+app.include_router(razorpay_oauth.router)
 
 # ---------------------------------------------
 # ROOT ENDPOINT
